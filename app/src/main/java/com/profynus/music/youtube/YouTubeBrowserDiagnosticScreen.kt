@@ -21,9 +21,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.foundation.Image
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.painterResource
+import com.profynus.music.R
 import org.json.JSONObject
 import org.json.JSONTokener
 
@@ -40,16 +41,6 @@ fun YouTubeBrowserDiagnosticScreen() {
     var navigationError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val export = remember { BrowserAudioExport(context, scope) }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) {
-                export.cancel("Export stopped when the app left the foreground. Retry to download.")
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
 
 
     // Load the initial test URL only once after the WebView is created.
@@ -73,7 +64,14 @@ fun YouTubeBrowserDiagnosticScreen() {
         modifier = Modifier.fillMaxSize().padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text("Profynus · Browser Diagnostics", style = MaterialTheme.typography.titleLarge)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Image(painterResource(R.drawable.profynus_logo), contentDescription = "Profynus logo",
+                modifier = Modifier.size(48.dp))
+            Column {
+                Text("Profynus Music", style = MaterialTheme.typography.titleLarge)
+                Text("Your music, ready to go", style = MaterialTheme.typography.bodySmall)
+            }
+        }
 
         OutlinedTextField(
             value = userUrl,
@@ -154,9 +152,7 @@ fun YouTubeBrowserDiagnosticScreen() {
         Text("Browser: $status", style = MaterialTheme.typography.bodySmall)
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { export.start(userUrl) }, enabled = browser != null && !export.busy) {
-                Text("Download MP3")
-            }
+            DownloadMp3Button(enabled = browser != null && !export.busy) { export.start(userUrl) }
             if (export.busy) {
                 OutlinedButton(onClick = { export.cancel() }) { Text("Cancel") }
             }

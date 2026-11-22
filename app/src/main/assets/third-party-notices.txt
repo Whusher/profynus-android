@@ -1,10 +1,16 @@
-MP3 encoding: jump3r 1.0.5 (de.sciss:jump3r:1.0.5), Java port of LAME.
-Authors: The L.A.M.E. project, Ken Händel, Vadym Vikulin, Hanns Holger Rutz.
-License: GNU Lesser General Public License, version 2.1 or later.
-Source: https://git.iem.at/sciss/jump3r
-Versioned source archive:
-https://repo.maven.apache.org/maven2/de/sciss/jump3r/1.0.5/jump3r-1.0.5-sources.jar
-License text: https://www.gnu.org/licenses/lgpl-2.1.txt
+MP3 encoding: LAME 3.100, native encoder.
+Copyright: The L.A.M.E. project and its contributors.
+License: GNU Library General Public License version 2 or later.
+Project: https://lame.sourceforge.io/
+Exact source: https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz
+SHA-256: ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e
+License: https://www.gnu.org/licenses/old-licenses/lgpl-2.0.txt
 
-The library is used unmodified. Profynus calls the PCM encoding core directly,
-without using the desktop JavaSound wrappers.
+Upstream sources are unmodified and compiled as the separate libmp3lame.so
+shared library. The reproducible Android build and JNI adapter are in
+app/src/main/cpp/CMakeLists.txt and mp3_encoder.cpp. All included ABIs are
+compiled from source with 16 KiB ELF page alignment.
+
+The previous jump3r Java implementation is retained only in instrumented
+benchmark tests (LGPL 2.1 or later), and is not included in the app installer.
+Source: https://git.iem.at/sciss/jump3r

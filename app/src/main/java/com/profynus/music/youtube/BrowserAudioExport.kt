@@ -17,6 +17,7 @@ import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.profynus.music.media.BrowserAudioConverter
+import com.profynus.music.media.ExportProgress
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import org.json.JSONObject
@@ -90,6 +91,7 @@ internal class BrowserAudioExport(
         webView.settings.mediaPlaybackRequiresUserGesture = false
         job = scope.launch {
             try {
+                ExportProgress.start(context, session) { reason -> cancel(reason) }
                 val source = withContext(Dispatchers.IO) {
                     context.assets.open("browser-audio-export.js").bufferedReader().use { it.readText() }
                 }
@@ -117,6 +119,7 @@ internal class BrowserAudioExport(
                     messages = null
                     token = null
                     busy = false
+                    ExportProgress.finish(session, report)
                 }
             }
         }
@@ -174,6 +177,7 @@ internal class BrowserAudioExport(
                         when (json.getString("type")) {
                             "ready" -> withContext(Dispatchers.Main) {
                                 report = "Waiting for the browser's audio stream…"
+                                ExportProgress.update(session, report)
                             }
                             "begin" -> {
                                 check(!begun) { "Audio stream restarted" }
@@ -202,6 +206,7 @@ internal class BrowserAudioExport(
                                 if (begun && covered.isFinite()) withContext(Dispatchers.Main) {
                                     progress = (covered / expectedDuration).toFloat().coerceIn(0f, 1f)
                                     report = "Downloading audio: ${covered.toInt()} / ${expectedDuration.toInt()} seconds"
+                                    ExportProgress.update(session, report, (progress * 100).toInt())
                                 }
                             }
                             "finish" -> {
@@ -221,17 +226,23 @@ internal class BrowserAudioExport(
                     stopBrowser(keepAwake = true)
                     report = "Verifying audio and encoding MP3…"
                     progress = 0f
+                    ExportProgress.update(session, report, 0)
                 }
+                val conversionStarted = SystemClock.elapsedRealtime()
                 BrowserAudioConverter.convert(input, output, expectedDuration) { percent ->
                     // At most 101 updates per export, on the Compose main dispatcher.
                     scope.launch {
                         if (token == session) {
                             report = "Encoding MP3: $percent%"
                             progress = percent / 100f
+                            ExportProgress.update(session, report, percent)
                         }
                     }
                 }
+                val conversionMs = SystemClock.elapsedRealtime() - conversionStarted
+                Log.i("ProfynusExport", "Native conversion: ${conversionMs}ms; capture+setup: ${conversionStarted - startedAt}ms")
                 currentCoroutineContext().ensureActive()
+                withContext(Dispatchers.Main) { ExportProgress.update(session, "Saving MP3…") }
                 val title = completion!!.optString("title", id)
                 val name = title.replace(Regex("[^\\p{L}\\p{N} ._()-]"), "_").trim().take(100)
                     .ifBlank { id } + "-$id.mp3"

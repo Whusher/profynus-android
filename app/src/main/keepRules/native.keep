@@ -1,0 +1,2 @@
+# JNI symbols use this exact class and method naming.
+-keep class com.profynus.music.media.NativeMp3 { *; }
