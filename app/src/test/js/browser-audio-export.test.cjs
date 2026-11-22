@@ -54,6 +54,11 @@ function browser() {
 
 test("captures typed-array slices, ignores video, and waits for disk acknowledgement before finishing", () => {
     const b = browser();
+    b.details.author = "Channel";
+    b.details.thumbnail = {thumbnails: [
+        {url: "https://i.ytimg.com/vi/test/small.jpg", width: 120},
+        {url: "https://i.ytimg.com/vi/test/large.jpg", width: 1280}
+    ]};
     const video = b.source.addSourceBuffer("video/webm");
     video.appendBuffer(new Uint8Array([99]));
     const audio = b.source.addSourceBuffer('audio/webm; codecs="opus"');
@@ -68,6 +73,8 @@ test("captures typed-array slices, ignores video, and waits for disk acknowledge
     assert.equal(b.messages.some(m => m.type === "finish"), false);
     b.ack(0);
     assert.equal(b.messages.find(m => m.type === "finish").chunks, 1);
+    assert.equal(b.messages.find(m => m.type === "finish").author, "Channel");
+    assert.equal(b.messages.find(m => m.type === "finish").thumbnail, "https://i.ytimg.com/vi/test/large.jpg");
     assert.equal(b.video.paused, true);
     assert.equal(b.video.muted, false);
 });

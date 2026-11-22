@@ -76,6 +76,10 @@
         return {
             id: details && details.videoId,
             title: details && details.title,
+            author: details && details.author,
+            thumbnail: details && details.thumbnail && details.thumbnail.thumbnails
+                ? [...details.thumbnail.thumbnails].sort((a, b) =>
+                    (Number(b.width) || 0) - (Number(a.width) || 0))[0]?.url : null,
             live: details && details.isLiveContent && !(Number(details.lengthSeconds) > 0),
             seconds: Number(details && details.lengthSeconds)
         };
@@ -96,7 +100,11 @@
     }
     function finishIfDrained() {
         if (!active || !finishing || queue.length || awaiting !== null) return;
-        send("finish", {duration, title: identity().title || config.videoId, chunks: sequence});
+        const info = identity();
+        if (info.id !== config.videoId) { fail("The video changed. Start a new export."); return; }
+        send("finish", {duration, title: (info.title || config.videoId).slice(0, 300),
+            author: (info.author || "").slice(0, 300),
+            thumbnail: (info.thumbnail || "").slice(0, 2048), chunks: sequence});
         stop();
     }
     const add = MediaSource.prototype.addSourceBuffer;

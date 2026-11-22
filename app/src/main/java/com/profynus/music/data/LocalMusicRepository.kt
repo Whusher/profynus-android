@@ -103,6 +103,7 @@ class LocalMusicRepository(private val context: Context) {
             MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.ALBUM,
             MediaStore.Audio.Media.ALBUM_ID,
+            MediaStore.Audio.Media.RELATIVE_PATH,
             MediaStore.Audio.Media.DURATION,
             MediaStore.Audio.Media.MIME_TYPE,
             MediaStore.Audio.Media.DATE_MODIFIED,
@@ -153,6 +154,7 @@ class LocalMusicRepository(private val context: Context) {
             )
 
             val albumIdColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+            val pathColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.RELATIVE_PATH)
 
             val durationColumn = cursor.getColumnIndexOrThrow(
                 MediaStore.Audio.Media.DURATION
@@ -200,7 +202,9 @@ class LocalMusicRepository(private val context: Context) {
                     durationMs = durationMs,
 
                     mimeType = cursor.getString(mimeColumn),
-                    artworkUri = cursor.getLong(albumIdColumn).takeIf { it > 0 }?.let {
+                    artworkUri = if (cursor.getString(pathColumn)?.startsWith("Music/Profynus/") == true) {
+                        ContentUris.withAppendedId(collection, id)
+                    } else cursor.getLong(albumIdColumn).takeIf { it > 0 }?.let {
                         ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), it)
                     },
 

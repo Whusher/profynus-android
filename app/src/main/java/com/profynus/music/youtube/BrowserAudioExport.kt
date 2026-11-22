@@ -18,6 +18,7 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.profynus.music.media.BrowserAudioConverter
 import com.profynus.music.media.ExportProgress
+import com.profynus.music.media.Mp3Tags
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import org.json.JSONObject
@@ -246,21 +247,43 @@ internal class BrowserAudioExport(
                 val title = completion!!.optString("title", id)
                 val name = title.replace(Regex("[^\\p{L}\\p{N} ._()-]"), "_").trim().take(100)
                     .ifBlank { id } + "-$id.mp3"
-                save(output, name)
+                val artist = completion!!.optString("author", "").take(300)
+                val thumbnail = completion!!.optString("thumbnail", "")
+                    .ifBlank { "https://i.ytimg.com/vi/$id/hqdefault.jpg" }
+                withContext(Dispatchers.Main) {
+                    report = "Adding video cover…"
+                    ExportProgress.update(session, report)
+                }
+                val cover = try {
+                    VideoCoverDownloader.download(thumbnail)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    null // A missing thumbnail must not discard successfully converted audio.
+                }
+                save(output, name, title, artist, Mp3Tags.header(title, artist, title, cover))
                 val elapsed = (SystemClock.elapsedRealtime() - startedAt) / 1000
                 Log.i("ProfynusExport", "Saved verified MP3: ${output.length()} bytes, ${expectedDuration.toInt()}s, elapsed=${elapsed}s")
-                withContext(Dispatchers.Main) { report = "Saved Music/Profynus/$name"; progress = 1f }
+                withContext(Dispatchers.Main) {
+                    report = "Saved Music/Profynus/$name" +
+                        if (cover != null) " • cover included" else " • cover unavailable; audio saved"
+                    progress = 1f
+                }
             } finally {
                 input.delete()
                 output.delete()
             }
         }
 
-    private suspend fun save(file: File, name: String) {
+    private suspend fun save(file: File, name: String, title: String, artist: String, tags: ByteArray) {
         val resolver = context.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.Audio.Media.DISPLAY_NAME, name)
             put(MediaStore.Audio.Media.MIME_TYPE, "audio/mpeg")
+            put(MediaStore.Audio.Media.TITLE, title)
+            put(MediaStore.Audio.Media.ARTIST, artist)
+            put(MediaStore.Audio.Media.ALBUM, title)
+            put(MediaStore.Audio.Media.IS_MUSIC, 1)
             put(MediaStore.Audio.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/Profynus")
             put(MediaStore.Audio.Media.IS_PENDING, 1)
         }
@@ -268,6 +291,7 @@ internal class BrowserAudioExport(
             ?: error("Could not create the MP3 in Music")
         try {
             checkNotNull(resolver.openOutputStream(uri)).use { destination ->
+                destination.write(tags)
                 file.inputStream().use { source ->
                     val buffer = ByteArray(64 * 1024)
                     while (true) {

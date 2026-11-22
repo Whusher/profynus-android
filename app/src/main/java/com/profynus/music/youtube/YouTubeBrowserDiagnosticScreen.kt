@@ -50,6 +50,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -88,6 +91,8 @@ fun YouTubeBrowserDiagnosticScreen() {
     var showAdvanced by remember { mutableStateOf(false) }
     var browser by remember { mutableStateOf<WebView?>(null) }
     var showBrowser by remember { mutableStateOf(false) }
+    var browserExpanded by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = browserExpanded) { browserExpanded = false }
     var pendingUrl by remember { mutableStateOf<String?>(null) }
     var navigationError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -165,10 +170,11 @@ fun YouTubeBrowserDiagnosticScreen() {
 
     // The outer Column must NOT scroll: it contains an independently scrolling WebView.
     Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 8.dp),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Panel {
+        if (!browserExpanded) {
+        Panel(contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp)) {
             SectionLabel("1 · Paste a link")
             OutlinedTextField(
                 value = userUrl,
@@ -223,13 +229,13 @@ fun YouTubeBrowserDiagnosticScreen() {
             }
         }
 
-        Panel {
+        Panel(contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp)) {
             SectionLabel("2 · Export audio")
             Text(
                 if (browser == null) {
                     "Open the video first. Export unlocks once the page has loaded."
                 } else {
-                    "Saves the audio of the open video as an MP3 file."
+                    "Saves an MP3 with the video cover and title included."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.onSurfaceVariant,
@@ -281,10 +287,20 @@ fun YouTubeBrowserDiagnosticScreen() {
             )
         }
 
+        }
+
         // Browser area: empty hint until a video is opened.
         if (showBrowser) {
             Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                SectionLabel("Browser · sign in here if YouTube asks")
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Browser", modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                    if (browserExpanded && export.busy) {
+                        TextButton(onClick = { export.cancel() }) { Text("Cancel export") }
+                    }
+                    TextButton(onClick = { browserExpanded = !browserExpanded }) {
+                        Text(if (browserExpanded) "Show controls" else "Expand browser")
+                    }
+                }
                 Box(
                     Modifier
                         .fillMaxWidth()
@@ -422,7 +438,7 @@ fun YouTubeBrowserDiagnosticScreen() {
         }
 
         // Advanced: format inspection, collapsed by default.
-        Column {
+        if (!browserExpanded) Column {
             Row(
                 Modifier
                     .fillMaxWidth()

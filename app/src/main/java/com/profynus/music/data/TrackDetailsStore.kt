@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.net.Uri
+import android.media.MediaMetadataRetriever
+import java.nio.ByteBuffer
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -116,7 +118,17 @@ class TrackDetailsStore(
 
 /** ImageDecoder also applies EXIF orientation; never decode a full-resolution camera image. */
 internal fun decodeArtwork(context: Context, uri: Uri, maxSize: Int): Bitmap {
-    val source = if (uri.scheme == "file") {
+    val source = if (uri.scheme == "content" && uri.authority == "media" &&
+        uri.path.orEmpty().contains("/audio/media/")) {
+        val retriever = MediaMetadataRetriever()
+        val picture = try {
+            retriever.setDataSource(context, uri)
+            requireNotNull(retriever.embeddedPicture) { "No embedded cover" }
+        } finally {
+            retriever.release()
+        }
+        ImageDecoder.createSource(ByteBuffer.wrap(picture))
+    } else if (uri.scheme == "file") {
         ImageDecoder.createSource(File(requireNotNull(uri.path)))
     } else {
         ImageDecoder.createSource(context.contentResolver, uri)
