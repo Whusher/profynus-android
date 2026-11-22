@@ -81,23 +81,42 @@ val generateBrandResources by tasks.registering(Copy::class) {
 tasks.named("preBuild").configure { dependsOn(generateBrandResources) }
 
 dependencies {
+    // Jetpack Compose — managed by the BOM
     implementation(platform(libs.androidx.compose.bom))
+
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
+
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material:material-icons-extended")
+
+    // AndroidX libraries managed independently
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation("androidx.webkit:webkit:1.18.0")
+
+    // Profynus Media Engine
+    implementation("androidx.media3:media3-exoplayer:1.11.1")
+    implementation("androidx.media3:media3-session:1.11.1")
     implementation("androidx.media3:media3-transformer:1.11.1")
-    // Retained only for the on-device A/B benchmark; excluded from the app APK.
-    androidTestImplementation("de.sciss:jump3r:1.0.5")
+
+    // Persistence
+    implementation("androidx.datastore:datastore-preferences:1.3.0")
+
+    // Existing Downloader
+    implementation("androidx.webkit:webkit:1.18.0")
+
+    // Tests
     testImplementation(libs.junit)
+
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation("de.sciss:jump3r:1.0.5")
+
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
