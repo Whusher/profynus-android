@@ -1,0 +1,10 @@
+MP3 encoding: jump3r 1.0.5 (de.sciss:jump3r:1.0.5), Java port of LAME.
+Authors: The L.A.M.E. project, Ken Händel, Vadym Vikulin, Hanns Holger Rutz.
+License: GNU Lesser General Public License, version 2.1 or later.
+Source: https://git.iem.at/sciss/jump3r
+Versioned source archive:
+https://repo.maven.apache.org/maven2/de/sciss/jump3r/1.0.5/jump3r-1.0.5-sources.jar
+License text: https://www.gnu.org/licenses/lgpl-2.1.txt
+
+The library is used unmodified. Profynus calls the PCM encoding core directly,
+without using the desktop JavaSound wrappers.
