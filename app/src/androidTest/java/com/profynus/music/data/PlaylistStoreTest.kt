@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -15,6 +16,26 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class PlaylistStoreTest {
+    @Test fun concurrentMembershipChangesPreserveAllUpdates() = runBlocking {
+        val store = PlaylistStore(ApplicationProvider.getApplicationContext<Context>())
+        val playlist = LocalPlaylist(name = "Concurrent test", songs = listOf("old:1", "old:2"))
+        try {
+            store.save(playlist, null)
+            kotlinx.coroutines.coroutineScope {
+                val changes = (1..12).map { index ->
+                    async { store.setMembership(playlist.id, "new:$index", true) }
+                }
+                changes.forEach { it.await() }
+            }
+            store.setMembership(playlist.id, "old:1", false)
+            store.setMembership(playlist.id, "old:2", false)
+            store.setMembership(playlist.id, "new:1", true)
+            val saved = store.playlists.first().single { it.id == playlist.id }
+            assertEquals((1..12).map { "new:$it" }.toSet(), saved.songs.toSet())
+            assertEquals(12, saved.songs.size)
+        } finally { store.delete(playlist.id) }
+    }
+
     @Test fun persistsMembershipAndIndependentCoverThenDeletesOnlyPlaylist() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val store = PlaylistStore(context)

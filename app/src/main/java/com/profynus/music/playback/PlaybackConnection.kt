@@ -27,7 +27,11 @@ data class PlaybackSnapshot(
     val isBuffering: Boolean = false,
     val mediaId: String = "",
     val details: TrackDetails? = null,
+    val shuffleEnabled: Boolean = false,
+    val repeatMode: Int = Player.REPEAT_MODE_OFF,
 )
+
+data class QueueEntry(val index: Int, val mediaId: String, val title: String, val artist: String, val artworkUri: String?)
 
 class PlaybackConnection(context: Context) {
     private val appContext = context.applicationContext
@@ -43,8 +47,24 @@ class PlaybackConnection(context: Context) {
     var snapshot by mutableStateOf(PlaybackSnapshot())
         private set
 
+    var queue by mutableStateOf(emptyList<QueueEntry>())
+        private set
+
+    private fun refreshQueue() {
+        val player = mediaController ?: return
+        queue = (0 until player.mediaItemCount).map { index ->
+            val item = player.getMediaItemAt(index)
+            QueueEntry(index, item.mediaId, item.mediaMetadata.title?.toString().orEmpty(),
+                item.mediaMetadata.artist?.toString().orEmpty(),
+                item.mediaMetadata.extras?.getString(TRACK_ARTWORK_URI) ?: item.mediaMetadata.artworkUri?.toString())
+        }
+    }
+
     private val listener = object : Player.Listener {
-        override fun onEvents(player: Player, events: Player.Events) = refresh()
+        override fun onEvents(player: Player, events: Player.Events) {
+            refresh()
+            if (events.contains(Player.EVENT_TIMELINE_CHANGED) || events.contains(Player.EVENT_MEDIA_METADATA_CHANGED)) refreshQueue()
+        }
     }
 
     init {
@@ -55,6 +75,7 @@ class PlaybackConnection(context: Context) {
                 controller.addListener(listener)
                 isConnected = true
                 refresh()
+                refreshQueue()
             }
         }, appContext.mainExecutor)
     }
@@ -63,6 +84,8 @@ class PlaybackConnection(context: Context) {
         val player = mediaController ?: return
         val metadata = player.mediaMetadata
         snapshot = PlaybackSnapshot(
+            shuffleEnabled = player.shuffleModeEnabled,
+            repeatMode = player.repeatMode,
             title = metadata.title?.toString().orEmpty(),
             artist = metadata.artist?.toString().orEmpty(),
             isPlaying = player.isPlaying,
@@ -84,9 +107,10 @@ class PlaybackConnection(context: Context) {
         )
     }
 
-    fun play(tracks: List<LocalTrack>, index: Int) {
+    fun play(tracks: List<LocalTrack>, index: Int, shuffle: Boolean = false) {
         if (tracks.isEmpty() || index !in tracks.indices) return
         mediaController?.apply {
+            shuffleModeEnabled = shuffle
             setMediaItems(tracks.map(LocalTrack::toMediaItem), index, 0L)
             prepare()
             play()
@@ -102,6 +126,33 @@ class PlaybackConnection(context: Context) {
             }
         }
     }
+
+    fun shuffleAll(tracks: List<LocalTrack>) {
+        if (tracks.isNotEmpty()) play(tracks, tracks.indices.random(), shuffle = true)
+    }
+    fun toggleShuffle() { mediaController?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } }
+    fun cycleRepeat() { mediaController?.let {
+        it.repeatMode = when (it.repeatMode) {
+            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
+    } }
+    fun addToQueue(track: LocalTrack): Boolean {
+        val player = mediaController ?: return false
+        player.addMediaItem(track.toMediaItem())
+        return true
+    }
+    fun skipTo(index: Int) { mediaController?.let {
+        if (index in 0 until it.mediaItemCount) {
+            it.seekToDefaultPosition(index)
+            if (it.playbackState == Player.STATE_IDLE) it.prepare()
+            it.play()
+        }
+    } }
+    fun removeFromQueue(index: Int) { mediaController?.let {
+        if (index in 0 until it.mediaItemCount) it.removeMediaItem(index)
+    } }
 
     fun next() { mediaController?.seekToNext() }
     fun previous() { mediaController?.seekToPrevious() }

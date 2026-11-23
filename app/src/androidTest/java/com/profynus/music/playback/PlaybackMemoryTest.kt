@@ -1,6 +1,9 @@
 package com.profynus.music.playback
 
 import android.content.Context
+import android.net.Uri
+import android.os.Bundle
+import com.profynus.music.data.TRACK_ARTWORK_URI
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -17,7 +20,7 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class PlaybackMemoryTest {
-    @Test fun restoresQueueIndexMetadataAndPositionWithoutAutoplay() = runBlocking {
+    @Test fun restoresQueueIndexMetadataAndPositionWithoutAutoplay() = runBlocking<Unit> {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val file = File(context.cacheDir, "${UUID.randomUUID()}.preferences_pb")
         val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -26,10 +29,23 @@ class PlaybackMemoryTest {
         try {
             withContext(Dispatchers.Main) {
                 val first = ExoPlayer.Builder(context).build()
+                val firstCover = Uri.parse("content://media/external/audio/albumart/1")
+                val currentCover = Uri.parse("content://media/external/audio/albumart/2")
                 first.setMediaItems((1..2).map {
+                    val metadata = MediaMetadata.Builder().setTitle("Song $it")
+                    if (it == 1) {
+                        metadata.setArtworkUri(firstCover)
+                    } else {
+                        // The service supplies notification artwork bytes and clears the public
+                        // artwork URI, while the original cover reference stays in extras.
+                        metadata.setArtworkData(byteArrayOf(1), MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+                        metadata.setExtras(Bundle().apply { putString(TRACK_ARTWORK_URI, currentCover.toString()) })
+                    }
                     MediaItem.Builder().setMediaId("$it").setUri("content://media/external/audio/media/$it")
-                        .setMediaMetadata(MediaMetadata.Builder().setTitle("Song $it").build()).build()
+                        .setMediaMetadata(metadata.build()).build()
                 }, 1, 12345)
+                first.shuffleModeEnabled = true
+                first.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ALL
                 val memory = PlaybackMemory(context, first, scope, store)
                 withTimeout(5000) { store.data.first { it.asMap().isNotEmpty() } }
                 memory.release()
@@ -42,7 +58,21 @@ class PlaybackMemoryTest {
                     assertEquals(1, second.currentMediaItemIndex)
                     assertEquals(12345L, second.currentPosition)
                     assertEquals("Song 2", second.mediaMetadata.title)
+                    assertEquals(firstCover, second.getMediaItemAt(0).mediaMetadata.artworkUri)
+                    assertEquals(currentCover, second.currentMediaItem?.mediaMetadata?.artworkUri)
+                    assertEquals(currentCover.toString(), second.mediaMetadata.extras?.getString(TRACK_ARTWORK_URI))
                     assertFalse(second.playWhenReady)
+                    assertTrue(second.shuffleModeEnabled)
+                    assertEquals(androidx.media3.common.Player.REPEAT_MODE_ALL, second.repeatMode)
+                    second.clearMediaItems()
+                    restored.save()
+                    withTimeout(5000) {
+                        store.data.first { prefs ->
+                            prefs.asMap().values.filterIsInstance<String>().any {
+                                org.json.JSONObject(it).getJSONArray("items").length() == 0
+                            }
+                        }
+                    }
                 } finally {
                     restored.release()
                     second.release()

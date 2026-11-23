@@ -9,6 +9,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import com.profynus.music.data.LocalMusicRepository
 import com.profynus.music.data.TRACK_URI
 import com.profynus.music.data.TRACK_ARTWORK_URI
 import kotlinx.coroutines.*
@@ -41,21 +42,37 @@ internal class PlaybackMemory(context: Context, private val player: Player, scop
             val saved = withContext(Dispatchers.IO) {
                 runCatching { store.data.first()[key]?.let(::JSONObject) }.getOrNull()
             }
+            // Older checkpoints saved the notification URI, which is cleared when
+            // the service publishes artwork bytes. Recover missing references from MediaStore.
+            val legacyArtwork = if (player.mediaItemCount == 0 && saved?.needsArtworkRecovery() == true) {
+                try {
+                    LocalMusicRepository(context.applicationContext).loadTracks()
+                        .associate { it.uri.toString() to it.artworkUri?.toString() }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: RuntimeException) {
+                    emptyMap()
+                }
+            } else emptyMap()
             if (player.mediaItemCount == 0 && saved != null) {
                 runCatching {
                     val queue = saved.getJSONArray("items")
                     val items = (0 until queue.length()).map { index ->
                         val item = queue.getJSONObject(index)
-                        MediaItem.Builder().setMediaId(item.getString("id")).setUri(item.getString("uri"))
+                        val uri = item.getString("uri")
+                        val artwork = item.optString("art").ifEmpty { legacyArtwork[uri] }
+                        MediaItem.Builder().setMediaId(item.getString("id")).setUri(uri)
                             .setMediaMetadata(MediaMetadata.Builder()
                                 .setTitle(item.optString("title")).setArtist(item.optString("artist"))
                                 .setAlbumTitle(item.optString("album"))
-                                .setArtworkUri(item.optString("art").takeIf { it.isNotEmpty() }?.let(Uri::parse))
+                                .setArtworkUri(artwork?.let(Uri::parse))
                                 .setExtras(Bundle().apply {
-                                    putString(TRACK_URI, item.getString("uri"))
-                                    putString(TRACK_ARTWORK_URI, item.optString("art").takeIf { it.isNotEmpty() })
+                                    putString(TRACK_URI, uri)
+                                    putString(TRACK_ARTWORK_URI, artwork)
                                 }).build()).build()
                     }
+                    player.shuffleModeEnabled = saved.optBoolean("shuffle")
+                    player.repeatMode = saved.optInt("repeat", Player.REPEAT_MODE_OFF).coerceIn(0, 2)
                     if (items.isNotEmpty()) player.setMediaItems(items,
                         saved.optInt("index").coerceIn(items.indices), saved.optLong("position").coerceAtLeast(0))
                 }
@@ -65,6 +82,12 @@ internal class PlaybackMemory(context: Context, private val player: Player, scop
             while (isActive) { save(); delay(3000) }
         }
     }
+    private fun JSONObject.needsArtworkRecovery(): Boolean {
+        if (optBoolean("artReferencesSaved")) return false
+        val items = optJSONArray("items") ?: return false
+        return (0 until items.length()).any { items.optJSONObject(it)?.optString("art").isNullOrEmpty() }
+    }
+
     fun release() {
         ticker?.cancel()
         save()
@@ -73,17 +96,24 @@ internal class PlaybackMemory(context: Context, private val player: Player, scop
     }
 
     fun save() {
-        if (!ready || player.mediaItemCount == 0) return
+        if (!ready) return
         val items = JSONArray()
         repeat(player.mediaItemCount) {
             val item = player.getMediaItemAt(it)
             val uri = item.localConfiguration?.uri ?: return@repeat
             val meta = item.mediaMetadata
+            val artwork = if (meta.extras?.containsKey(TRACK_ARTWORK_URI) == true) {
+                meta.extras?.getString(TRACK_ARTWORK_URI)
+            } else {
+                meta.artworkUri?.toString()
+            }
             items.put(JSONObject().put("id", item.mediaId).put("uri", uri.toString())
                 .put("title", meta.title?.toString().orEmpty()).put("artist", meta.artist?.toString().orEmpty())
-                .put("album", meta.albumTitle?.toString().orEmpty()).put("art", meta.artworkUri?.toString().orEmpty()))
+                .put("album", meta.albumTitle?.toString().orEmpty()).put("art", artwork.orEmpty()))
         }
         writes.trySend(JSONObject().put("items", items).put("index", player.currentMediaItemIndex)
-            .put("position", player.currentPosition.coerceAtLeast(0)).toString())
+            .put("position", player.currentPosition.coerceAtLeast(0))
+            .put("artReferencesSaved", true)
+            .put("shuffle", player.shuffleModeEnabled).put("repeat", player.repeatMode).toString())
     }
 }

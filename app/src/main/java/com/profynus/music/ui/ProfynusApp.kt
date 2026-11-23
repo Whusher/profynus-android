@@ -2,13 +2,7 @@
 
 package com.profynus.music.ui
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -30,10 +24,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
@@ -41,10 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -53,17 +41,13 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -71,8 +55,6 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -85,9 +67,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -110,31 +90,19 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import com.profynus.music.data.AppearancePreferences
 import com.profynus.music.data.AppearanceSettings
-import com.profynus.music.data.LocalMusicRepository
-import com.profynus.music.data.LocalTrack
 import com.profynus.music.data.PlayerVisual
 import com.profynus.music.data.TrackDetails
 import com.profynus.music.data.TrackDetailsStore
 import com.profynus.music.data.details
-import com.profynus.music.data.withDetails
 import com.profynus.music.data.ShapeProfile
-import com.profynus.music.data.SortDirection
-import com.profynus.music.data.TrackSortField
-import com.profynus.music.data.sortLocalTracks
 import com.profynus.music.playback.PlaybackConnection
 import com.profynus.music.playback.PlaybackSnapshot
 import com.profynus.music.youtube.YouTubeBrowserDiagnosticScreen
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.time.format.FormatStyle
 import java.util.Locale
 
 private enum class Destination(val title: String, val icon: ImageVector) {
@@ -156,6 +124,8 @@ fun ProfynusApp() {
     val palette = ProfynusPalettes.all.firstOrNull { it.id == settings.paletteId }
         ?: ProfynusPalettes.all.first()
     val playback = remember(context) { PlaybackConnection(context.applicationContext) }
+    val library = rememberLibraryState(context)
+    val playlistStore = remember(context) { com.profynus.music.data.PlaylistStore(context.applicationContext) }
     val detailsStore = remember(context) { TrackDetailsStore(context.applicationContext) }
     val trackEdits by detailsStore.edits.collectAsState(initial = emptyMap())
     var editingDetails by rememberSaveable(stateSaver = TrackDetailsSaver) { mutableStateOf<TrackDetails?>(null) }
@@ -317,6 +287,8 @@ fun ProfynusApp() {
                                     onEdit = { editingDetails = it },
                                 )
                                 Destination.LIBRARY -> LibraryScreen(
+                                    library = library,
+                                    playlistStore = playlistStore,
                                     playback = playback,
                                     edits = trackEdits,
                                     onEdit = { editingDetails = it },
@@ -357,14 +329,14 @@ private fun PlayerScreen(
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(22.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         // Hero: the globe sits in a glowing, gradient-bordered stage.
         Box(
             Modifier
                 .fillMaxWidth()
                 .swipeToSkip(enabled = hasQueue, onPrevious = { tick(); playback.previous() }, onNext = { tick(); playback.next() })
-                .heightIn(min = 280.dp)
+                .heightIn(min = 240.dp)
                 .clip(heroShape)
                 .background(Brush.verticalGradient(listOf(colors.surfaceContainerHigh, colors.surfaceContainerLowest)))
                 .border(
@@ -385,12 +357,12 @@ private fun PlayerScreen(
             contentAlignment = Alignment.Center,
         ) {
             if (settings.playerVisual == PlayerVisual.SPHERE) {
-                GlobeVisualizer(palette.accent, settings.shape, settings.reducedMotion || !state.isPlaying, audioReactive = state.isPlaying)
+                GlobeVisualizer(palette.accent, settings.shape, settings.reducedMotion || !state.isPlaying, modifier = Modifier.height(220.dp), audioReactive = state.isPlaying)
             } else {
                 TrackArtwork(
                     artworkUri = state.details?.artworkUri,
                     description = "Album art for ${state.title}",
-                    modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(20.dp)),
+                    modifier = Modifier.size(220.dp).clip(RoundedCornerShape(20.dp)),
                     fallback = {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(64.dp), tint = colors.primary)
@@ -483,6 +455,8 @@ private fun PlayerScreen(
                 )
             }
         }
+
+        PlayerExtras(state, playback, onTick = { tick() })
 
         if (!hasQueue) {
             Button(
@@ -617,277 +591,6 @@ private fun MiniPlayer(state: PlaybackSnapshot, playback: PlaybackConnection, on
 // ---------------------------------------------------------------------------------------------
 // Library
 // ---------------------------------------------------------------------------------------------
-
-@Composable
-private fun LibraryScreen(
-    playback: PlaybackConnection,
-    edits: Map<String, TrackDetails>,
-    onEdit: (TrackDetails) -> Unit,
-    onTrackStarted: () -> Unit,
-) {
-    val context = LocalContext.current
-    val colors = MaterialTheme.colorScheme
-    val repository = remember(context) { LocalMusicRepository(context.applicationContext) }
-    val requiredPermission = if (Build.VERSION.SDK_INT >= 33) {
-        Manifest.permission.READ_MEDIA_AUDIO
-    } else {
-        Manifest.permission.READ_EXTERNAL_STORAGE
-    }
-    var granted by remember {
-        mutableStateOf(ContextCompat.checkSelfPermission(context, requiredPermission) == PackageManager.PERMISSION_GRANTED)
-    }
-    var refreshKey by remember { mutableIntStateOf(0) }
-    var tracks by remember { mutableStateOf(emptyList<LocalTrack>()) }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var query by rememberSaveable { mutableStateOf("") }
-    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-    var showPlaylists by rememberSaveable { mutableStateOf(false) }
-    var sortField by rememberSaveable { mutableStateOf(TrackSortField.NAME) }
-    var sortDirection by rememberSaveable { mutableStateOf(SortDirection.ASCENDING) }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        granted = it
-        if (it) refreshKey++
-    }
-    LaunchedEffect(granted, refreshKey) {
-        if (!granted) return@LaunchedEffect
-        busy = true
-        error = null
-        try {
-            tracks = repository.loadTracks()
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (exception: Exception) {
-            error = "Unable to read local music: ${exception.localizedMessage.orEmpty()}"
-        } finally {
-            busy = false
-        }
-    }
-    val displayedTracks = remember(tracks, edits, query, sortField, sortDirection) {
-        val matching = tracks.map { it.withDetails(edits[it.uri.toString()]) }.filter { track ->
-            track.title.contains(query, ignoreCase = true) ||
-                    track.artist.contains(query, ignoreCase = true) ||
-                    track.album.contains(query, ignoreCase = true)
-        }
-        sortLocalTracks(matching, sortField, sortDirection)
-    }
-    LaunchedEffect(sortField, sortDirection, query) { listState.scrollToItem(0) }
-    if (showPlaylists) PlaylistsDialog(
-        tracks = tracks.map { it.withDetails(edits[it.uri.toString()]) },
-        canPlay = playback.isConnected,
-        onPlay = { playback.play(it, 0); onTrackStarted() },
-        onDismiss = { showPlaylists = false },
-    )
-    // Only rows that read this value recompose when the playing track changes.
-    val nowPlaying by remember(playback) {
-        derivedStateOf { playback.snapshot.mediaId }
-    }
-
-    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Library", style = MaterialTheme.typography.displaySmall)
-                Text(
-                    "${tracks.size} local tracks • over ${LocalMusicRepository.MINIMUM_TRACK_DURATION_MS / 1000} seconds",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.onSurfaceVariant,
-                )
-            }
-            FilledTonalIconButton(onClick = { refreshKey++ }, enabled = granted) {
-                Icon(Icons.Default.Refresh, contentDescription = "Refresh music library")
-            }
-        }
-        Spacer(Modifier.height(14.dp))
-
-        if (!granted) {
-            EmptyState(
-                icon = Icons.Default.LibraryMusic,
-                title = "Find the music on your phone",
-                body = "Allow Profynus to read audio files stored on this device. Nothing leaves your phone.",
-                action = {
-                    Button(onClick = { launcher.launch(requiredPermission) }, shape = CircleShape) {
-                        Text("Allow audio access")
-                    }
-                },
-            )
-            return@Column
-        }
-
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            placeholder = { Text("Search songs, artists, albums") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            trailingIcon = {
-                if (query.isNotEmpty()) {
-                    IconButton(onClick = { query = "" }) {
-                        Icon(Icons.Default.Close, contentDescription = "Clear search")
-                    }
-                }
-            },
-            singleLine = true,
-            shape = CircleShape,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = colors.surfaceContainer,
-                unfocusedContainerColor = colors.surfaceContainer,
-                focusedBorderColor = colors.primary,
-                unfocusedBorderColor = colors.outlineVariant,
-                focusedLeadingIconColor = colors.primary,
-                cursorColor = colors.primary,
-            ),
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        androidx.compose.material3.TextButton(onClick = { showPlaylists = true }, enabled = !busy) { Text("Your playlists") }
-
-        // Tap a chip to sort by it; tap the selected chip again to reverse the order.
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(vertical = 12.dp),
-        ) {
-            items(TrackSortField.entries.toList()) { field ->
-                val selected = field == sortField
-                val directionIcon: (@Composable () -> Unit)? = if (selected) {
-                    {
-                        val ascending = sortDirection == SortDirection.ASCENDING
-                        Icon(
-                            imageVector = if (ascending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
-                            contentDescription = if (ascending) "Ascending; tap to reverse" else "Descending; tap to reverse",
-                            modifier = Modifier.size(FilterChipDefaults.IconSize),
-                        )
-                    }
-                } else null
-                FilterChip(
-                    selected = selected,
-                    onClick = {
-                        if (selected) {
-                            sortDirection = if (sortDirection == SortDirection.ASCENDING) {
-                                SortDirection.DESCENDING
-                            } else {
-                                SortDirection.ASCENDING
-                            }
-                        } else {
-                            sortField = field
-                        }
-                    },
-                    label = { Text(field.label) },
-                    trailingIcon = directionIcon,
-                    shape = CircleShape,
-                    colors = profynusChipColors(),
-                )
-            }
-        }
-
-        if (!playback.isConnected) {
-            Text(
-                "Connecting to local playback service…",
-                style = MaterialTheme.typography.labelSmall,
-                color = colors.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
-        }
-        error?.let { Text(it, color = colors.error, modifier = Modifier.padding(bottom = 8.dp)) }
-
-        when {
-            busy -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-            displayedTracks.isEmpty() -> EmptyState(
-                icon = Icons.Default.LibraryMusic,
-                title = if (tracks.isEmpty()) "No music found yet" else "No matches",
-                body = if (tracks.isEmpty()) {
-                    "Copy music onto your phone, then tap refresh."
-                } else {
-                    "Try a different search."
-                },
-            )
-            else -> LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                contentPadding = PaddingValues(bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                itemsIndexed(displayedTracks, key = { _, track -> track.id }) { index, track ->
-                    TrackRow(
-                        track = track,
-                        isCurrent = track.id.toString() == nowPlaying,
-                        showModified = sortField == TrackSortField.DATE_MODIFIED,
-                        enabled = playback.isConnected,
-                        onEdit = { onEdit(track.details()) },
-                        onClick = {
-                            playback.play(displayedTracks, index)
-                            onTrackStarted()
-                        },
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TrackRow(
-    track: LocalTrack,
-    isCurrent: Boolean,
-    showModified: Boolean,
-    enabled: Boolean,
-    onEdit: () -> Unit,
-    onClick: () -> Unit,
-) {
-    val colors = MaterialTheme.colorScheme
-    val background by animateColorAsState(
-        if (isCurrent) colors.primary.copy(alpha = 0.10f) else Color.Transparent,
-        label = "rowBackground",
-    )
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(background)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        TrackArtwork(
-            artworkUri = track.artworkUri?.toString(),
-            description = null,
-            modifier = Modifier.size(50.dp).clip(RoundedCornerShape(14.dp)),
-            maxSize = 160,
-            fallback = { ArtTile(seed = track.title, size = 50.dp, active = isCurrent) },
-        )
-        Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
-            Text(
-                track.title,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleSmall,
-                color = if (isCurrent) colors.primary else colors.onSurface,
-            )
-            Text(
-                track.artist,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant,
-            )
-            if (showModified) {
-                Text(
-                    "Modified ${modifiedDateText(track.modifiedAtEpochSeconds)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = colors.onSurfaceVariant,
-                )
-            }
-        }
-        Text(
-            durationText(track.durationMs),
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.onSurfaceVariant,
-        )
-        IconButton(onClick = onEdit) {
-            Icon(Icons.Default.Edit, contentDescription = "Edit details for ${track.title}", modifier = Modifier.size(20.dp))
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------------------------
 // Feed
@@ -1058,13 +761,4 @@ private fun durationText(millis: Long): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "%d:%02d".format(Locale.ROOT, minutes, seconds)
-}
-
-/** MediaStore reports DATE_MODIFIED in epoch seconds. */
-private fun modifiedDateText(epochSeconds: Long): String {
-    if (epochSeconds <= 0L) return "Unknown"
-    return DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
-        .withLocale(Locale.getDefault())
-        .withZone(ZoneId.systemDefault())
-        .format(Instant.ofEpochSecond(epochSeconds))
 }

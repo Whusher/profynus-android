@@ -69,6 +69,18 @@ class PlaylistStore(context: Context) {
             old?.let { deleteArtwork(JSONObject(it).optString("artwork")) }
         }
     }
+    /** Apply membership changes to the latest stored value, avoiding stale UI overwrites. */
+    suspend fun setMembership(id: String, uri: String, included: Boolean) = withContext(Dispatchers.IO) {
+        store.edit { prefs ->
+            val key = stringPreferencesKey(id)
+            val json = JSONObject(requireNotNull(prefs[key]) { "This playlist no longer exists." })
+            val array = json.getJSONArray("songs")
+            val songs = (0 until array.length()).map(array::getString)
+            val updated = if (included) (songs + uri).distinct() else songs.filter { it != uri }
+            prefs[key] = json.put("songs", JSONArray(updated)).toString()
+        }
+    }
+
     private fun deleteArtwork(uri: String?) {
         val file = uri?.let(Uri::parse)?.path?.let(::File) ?: return
         if (file.parentFile == File(context.filesDir, "playlist_artwork")) file.delete()
