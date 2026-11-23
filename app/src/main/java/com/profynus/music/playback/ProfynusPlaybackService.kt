@@ -15,15 +15,25 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 
 /** Owns audio independently of the Activity; Media3 builds system media controls. */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class ProfynusPlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
     private var player: ExoPlayer? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var metadata: PlaybackMetadata? = null
+    private var memory: PlaybackMemory? = null
 
     override fun onCreate() {
         super.onCreate()
-        val exoPlayer = ExoPlayer.Builder(this)
+        val renderers = object : androidx.media3.exoplayer.DefaultRenderersFactory(this) {
+            override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean,
+                enableAudioOutputPlaybackParams: Boolean): androidx.media3.exoplayer.audio.AudioSink {
+                return androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+                    .setAudioProcessors(arrayOf(androidx.media3.exoplayer.audio.TeeAudioProcessor(AudioEnergy())))
+                    .build()
+            }
+        }
+        val exoPlayer = ExoPlayer.Builder(this, renderers)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -34,6 +44,7 @@ class ProfynusPlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .build()
         player = exoPlayer
+        memory = PlaybackMemory(applicationContext, exoPlayer, serviceScope)
 
         val activityIntent = Intent(this, MainActivity::class.java)
         val sessionActivity = PendingIntent.getActivity(
@@ -49,6 +60,8 @@ class ProfynusPlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     override fun onDestroy() {
+        memory?.release()
+        memory = null
         serviceScope.cancel()
         metadata?.release()
         metadata = null

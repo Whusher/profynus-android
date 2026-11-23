@@ -95,7 +95,12 @@ class PlaybackConnection(context: Context) {
     }
 
     fun toggle() {
-        mediaController?.let { if (it.isPlaying) it.pause() else it.play() }
+        mediaController?.let {
+            if (it.isPlaying) it.pause() else {
+                if (it.playbackState == Player.STATE_IDLE) it.prepare()
+                it.play()
+            }
+        }
     }
 
     fun next() { mediaController?.seekToNext() }

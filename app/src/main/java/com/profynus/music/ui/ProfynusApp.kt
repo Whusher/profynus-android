@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
 package com.profynus.music.ui
 
@@ -9,7 +9,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -99,7 +101,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -347,6 +351,10 @@ private fun PlayerScreen(
     val colors = MaterialTheme.colorScheme
     val hasQueue = state.queueSize > 0
     val heroShape = RoundedCornerShape(32.dp)
+    // PlayerScreen, after `val heroShape = ...`
+    val haptic = LocalHapticFeedback.current
+    fun tick() = haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(22.dp),
@@ -355,6 +363,7 @@ private fun PlayerScreen(
         Box(
             Modifier
                 .fillMaxWidth()
+                .swipeToSkip(enabled = hasQueue, onPrevious = { tick(); playback.previous() }, onNext = { tick(); playback.next() })
                 .heightIn(min = 280.dp)
                 .clip(heroShape)
                 .background(Brush.verticalGradient(listOf(colors.surfaceContainerHigh, colors.surfaceContainerLowest)))
@@ -376,7 +385,7 @@ private fun PlayerScreen(
             contentAlignment = Alignment.Center,
         ) {
             if (settings.playerVisual == PlayerVisual.SPHERE) {
-                GlobeVisualizer(palette.accent, settings.shape, settings.reducedMotion || (hasQueue && !state.isPlaying))
+                GlobeVisualizer(palette.accent, settings.shape, settings.reducedMotion || !state.isPlaying, audioReactive = state.isPlaying)
             } else {
                 TrackArtwork(
                     artworkUri = state.details?.artworkUri,
@@ -434,8 +443,9 @@ private fun PlayerScreen(
             Text(
                 state.title.ifBlank { "Your music starts here" },
                 style = MaterialTheme.typography.headlineMedium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+                modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
             )
             Text(
                 state.artist.ifBlank { if (hasQueue) "Unknown artist" else "Choose a song from your library" },
@@ -462,14 +472,14 @@ private fun PlayerScreen(
                     icon = Icons.Default.SkipPrevious,
                     description = "Previous track",
                     enabled = hasQueue,
-                    onClick = playback::previous,
+                    onClick = { tick(); playback.previous() }
                 )
                 PlayPauseButton(isPlaying = state.isPlaying, enabled = hasQueue, onClick = playback::toggle)
                 TransportButton(
                     icon = Icons.Default.SkipNext,
                     description = "Next track",
                     enabled = hasQueue,
-                    onClick = playback::next,
+                    onClick = { tick(); playback.next() }
                 )
             }
         }
@@ -500,7 +510,7 @@ private fun PlayerScreen(
         Panel(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp), spacing = 4.dp) {
             SectionLabel(if (settings.playerVisual == PlayerVisual.SPHERE) "Shape profile  •  ${settings.shape.label}" else "Album artwork")
             Text(
-                if (settings.playerVisual == PlayerVisual.SPHERE) "Your sphere follows the style selected in Profile."
+                if (settings.playerVisual == PlayerVisual.SPHERE) "Your sphere reacts to the song’s decoded audio and uses the style selected in Profile."
                 else "Make it yours. Add a cover using Edit song details.",
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.onSurfaceVariant,
@@ -631,6 +641,8 @@ private fun LibraryScreen(
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    var showPlaylists by rememberSaveable { mutableStateOf(false) }
     var sortField by rememberSaveable { mutableStateOf(TrackSortField.NAME) }
     var sortDirection by rememberSaveable { mutableStateOf(SortDirection.ASCENDING) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -659,6 +671,13 @@ private fun LibraryScreen(
         }
         sortLocalTracks(matching, sortField, sortDirection)
     }
+    LaunchedEffect(sortField, sortDirection, query) { listState.scrollToItem(0) }
+    if (showPlaylists) PlaylistsDialog(
+        tracks = tracks.map { it.withDetails(edits[it.uri.toString()]) },
+        canPlay = playback.isConnected,
+        onPlay = { playback.play(it, 0); onTrackStarted() },
+        onDismiss = { showPlaylists = false },
+    )
     // Only rows that read this value recompose when the playing track changes.
     val nowPlaying by remember(playback) {
         derivedStateOf { playback.snapshot.mediaId }
@@ -718,6 +737,8 @@ private fun LibraryScreen(
             ),
             modifier = Modifier.fillMaxWidth(),
         )
+
+        androidx.compose.material3.TextButton(onClick = { showPlaylists = true }, enabled = !busy) { Text("Your playlists") }
 
         // Tap a chip to sort by it; tap the selected chip again to reverse the order.
         LazyRow(
@@ -781,6 +802,7 @@ private fun LibraryScreen(
                 },
             )
             else -> LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 contentPadding = PaddingValues(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),

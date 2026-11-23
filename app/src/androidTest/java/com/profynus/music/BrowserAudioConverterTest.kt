@@ -97,15 +97,30 @@ class BrowserAudioConverterTest {
         } finally { input.delete(); output.delete() }
     }
 
-    private fun writeWave(file: File, channels: Int) {
+    @Test fun benchmarkThirtySeconds() = runBlocking {
+        val dir = InstrumentationRegistry.getInstrumentation().targetContext.cacheDir
+        val input = File.createTempFile("benchmark", ".wav", dir)
+        val output = File.createTempFile("benchmark", ".mp3", dir)
+        try {
+            writeWave(input, 2, 30)
+            repeat(4) { iteration ->
+                val start = android.os.SystemClock.elapsedRealtime()
+                BrowserAudioConverter.convert(input, output, 30.0) {}
+                android.util.Log.i("ProfynusBenchmark",
+                    "converter 30s stereo run=$iteration elapsedMs=${android.os.SystemClock.elapsedRealtime() - start}")
+            }
+        } finally { input.delete(); output.delete() }
+    }
+
+    private fun writeWave(file: File, channels: Int, seconds: Int = 1) {
         val rate = 48000
-        val dataSize = rate * channels * 2
+        val dataSize = rate * channels * 2 * seconds
         val wav = ByteBuffer.allocate(44 + dataSize).order(ByteOrder.LITTLE_ENDIAN)
         wav.put("RIFF".toByteArray()).putInt(36 + dataSize).put("WAVEfmt ".toByteArray())
         wav.putInt(16).putShort(1).putShort(channels.toShort()).putInt(rate)
         wav.putInt(rate * channels * 2).putShort((channels * 2).toShort()).putShort(16)
         wav.put("data".toByteArray()).putInt(dataSize)
-        repeat(rate) { index ->
+        repeat(rate * seconds) { index ->
             val sample = (12000 * sin(2 * PI * 440 * index / rate)).toInt().toShort()
             repeat(channels) { wav.putShort(sample) }
         }

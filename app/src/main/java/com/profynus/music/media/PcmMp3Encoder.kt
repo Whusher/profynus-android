@@ -5,7 +5,11 @@ import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-/** Native LAME, fed in bounded batches. One encoder owns one ordered MP3 bitstream. */
+/**
+ * Native LAME, fed in bounded batches. One encoder owns one ordered MP3 bitstream.
+ * Calls must remain serial: OrderedPcmEncoder overlaps decoding with this encoder and
+ * coalesces small decoder outputs into full batches without splitting the LAME state.
+ */
 internal class PcmMp3Encoder(
     sampleRate: Int,
     private val channels: Int,
