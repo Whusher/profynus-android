@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.util.Log
+import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -92,7 +93,10 @@ fun YouTubeBrowserDiagnosticScreen() {
     var browser by remember { mutableStateOf<WebView?>(null) }
     var showBrowser by remember { mutableStateOf(false) }
     var browserExpanded by rememberSaveable { mutableStateOf(false) }
-    BackHandler(enabled = browserExpanded) { browserExpanded = false }
+    var canGoBack by remember { mutableStateOf(false) }
+    BackHandler(enabled = canGoBack || browserExpanded) {
+        if (browser?.canGoBack() == true) browser?.goBack() else browserExpanded = false
+    }
     var pendingUrl by remember { mutableStateOf<String?>(null) }
     var navigationError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -119,9 +123,23 @@ fun YouTubeBrowserDiagnosticScreen() {
     DisposableEffect(Unit) {
         onDispose {
             export.dispose()
+            CookieManager.getInstance().flush()
             browser?.stopLoading()
             browser?.destroy()
             browser = null
+        }
+    }
+
+    fun openBrowser(target: String) {
+        diagnostics = "Not inspected"
+        navigationError = null
+        if (browser == null) {
+            pendingUrl = target
+            showBrowser = true
+            status = "Starting browser…"
+        } else {
+            status = "Opening YouTube…"
+            browser?.loadUrl(target)
         }
     }
 
@@ -131,17 +149,7 @@ fun YouTubeBrowserDiagnosticScreen() {
             status = "That doesn't look like a YouTube link."
             return
         }
-        diagnostics = "Not inspected"
-        navigationError = null
-        val webView = browser
-        if (webView == null) {
-            pendingUrl = target
-            showBrowser = true
-            status = "Starting browser…"
-        } else {
-            status = "Opening YouTube…"
-            webView.loadUrl(target)
-        }
+        openBrowser(target)
     }
 
     fun inspectFormats() {
@@ -227,6 +235,14 @@ fun YouTubeBrowserDiagnosticScreen() {
                 Spacer(Modifier.width(10.dp))
                 Text(if (browser == null) "Open video" else "Reload with this link")
             }
+            TextButton(
+                onClick = {
+                    openBrowser("https://m.youtube.com/")
+                    browserExpanded = true
+                },
+                enabled = !export.busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Browse / search YouTube") }
         }
 
         Panel(contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp)) {
@@ -293,6 +309,9 @@ fun YouTubeBrowserDiagnosticScreen() {
         if (showBrowser) {
             Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { browser?.goBack() }, enabled = canGoBack) {
+                        Text("Back")
+                    }
                     Text("Browser", modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
                     if (browserExpanded && export.busy) {
                         TextButton(onClick = { export.cancel() }) { Text("Cancel export") }
@@ -316,6 +335,9 @@ fun YouTubeBrowserDiagnosticScreen() {
                             WebView.setWebContentsDebuggingEnabled(debug)
 
                             WebView(androidContext).apply {
+                                val cookies = CookieManager.getInstance()
+                                cookies.setAcceptCookie(true)
+                                cookies.setAcceptThirdPartyCookies(this, true)
                                 settings.javaScriptEnabled = true
                                 settings.domStorageEnabled = true
                                 settings.mediaPlaybackRequiresUserGesture = true
@@ -366,9 +388,9 @@ fun YouTubeBrowserDiagnosticScreen() {
                                         if (!request.isForMainFrame) return false
                                         val uri = request.url
                                         val host = uri.host.orEmpty().lowercase()
-                                        if (uri.scheme == "https" &&
-                                            (host == "youtube.com" || host.endsWith(".youtube.com"))
-                                        ) return false
+                                        // Let WebView follow the original request, including redirects,
+                                        // with the same cookie jar throughout account sign-in.
+                                        if (YouTubeBrowserNavigation.staysInBrowser(uri.toString())) return false
 
                                         if (uri.scheme == "https") {
                                             try {
@@ -393,7 +415,16 @@ fun YouTubeBrowserDiagnosticScreen() {
                                         status = "Loading ${Uri.parse(url.orEmpty()).host.orEmpty()}…"
                                     }
 
+                                    override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+                                        canGoBack = view.canGoBack()
+                                        // YouTube also navigates to search results/videos without a page reload.
+                                        runCatching { YouTubeUrlParser.parse(url.orEmpty()).watchUrl }
+                                            .getOrNull()?.let { userUrl = it }
+                                    }
+
                                     override fun onPageFinished(view: WebView, url: String?) {
+                                        canGoBack = view.canGoBack()
+                                        CookieManager.getInstance().flush()
                                         status = navigationError
                                             ?: "Page loaded: ${Uri.parse(url.orEmpty()).host.orEmpty()}"
                                     }
@@ -432,7 +463,7 @@ fun YouTubeBrowserDiagnosticScreen() {
                 EmptyState(
                     icon = Icons.Default.Public,
                     title = "No video open",
-                    body = "Paste a link above and tap Open video. The browser appears here so you can sign in if YouTube asks.",
+                    body = "Paste a video link or tap Browse / search YouTube to find a video.",
                 )
             }
         }
